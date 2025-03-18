@@ -3,12 +3,25 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import * as React from 'react'
-import { ReactNode, Suspense, useEffect, useRef } from 'react'
+import { ReactNode, Suspense, useRef } from 'react'
 import toast, { Toaster } from 'react-hot-toast'
+import dynamic from 'next/dynamic'
 
-import { AccountChecker } from '../account/account-ui'
-import { ClusterChecker, ClusterUiSelect, ExplorerLink } from '../cluster/cluster-ui'
-import { WalletButton } from '../solana/solana-provider'
+import { ClusterChecker, ClusterUiSelect } from '../cluster/cluster-ui'
+
+// Dynamically import wallet components
+const WalletComponents = dynamic(
+  async () => {
+    const { WalletButton } = await import('../solana/solana-provider')
+    const { AccountChecker } = await import('../account/account-ui')
+    
+    return function WalletComponentsWrapper(props: any) {
+      const Component = props.component === 'WalletButton' ? WalletButton : AccountChecker;
+      return <Component {...props} />;
+    };
+  },
+  { ssr: false }
+)
 
 export function UiLayout({ children, links }: { children: ReactNode; links: { label: string; path: string }[] }) {
   const pathname = usePathname()
@@ -31,12 +44,16 @@ export function UiLayout({ children, links }: { children: ReactNode; links: { la
           </ul>
         </div>
         <div className="flex-none space-x-2">
-          <WalletButton />
+          <Suspense fallback={<div className="btn btn-ghost">Loading...</div>}>
+            <WalletComponents component="WalletButton" />
+          </Suspense>
           <ClusterUiSelect />
         </div>
       </div>
       <ClusterChecker>
-        <AccountChecker />
+        <Suspense fallback={null}>
+          <WalletComponents component="AccountChecker" />
+        </Suspense>
       </ClusterChecker>
       <div className="flex-grow mx-4 lg:mx-auto">
         <Suspense
@@ -88,7 +105,7 @@ export function AppModal({
 }) {
   const dialogRef = useRef<HTMLDialogElement | null>(null)
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!dialogRef.current) return
     if (show) {
       dialogRef.current.showModal()
@@ -149,12 +166,38 @@ export function ellipsify(str = '', len = 4) {
 }
 
 export function useTransactionToast() {
-  return (signature: string) => {
-    toast.success(
-      <div className={'text-center'}>
-        <div className="text-lg">Transaction sent</div>
-        <ExplorerLink path={`tx/${signature}`} label={'View Transaction'} className="btn btn-xs btn-primary" />
-      </div>,
-    )
+  return (signature: string, message?: string) => {
+    toast.custom((t) => (
+      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} bg-base-200 shadow-lg rounded-lg pointer-events-auto flex`}>
+        <div className="flex-1 p-4">
+          <div className="flex items-center">
+            <div className="flex-1">
+              <p className="text-sm font-medium">
+                {message ?? 'Transaction processed'}
+              </p>
+              <p className="text-xs text-base-content/70 truncate max-w-[200px] md:max-w-[300px]">
+                {signature}
+              </p>
+            </div>
+            <div className="ml-4 flex-shrink-0 flex">
+              <button
+                onClick={() => {
+                  window.open(`https://explorer.solana.com/tx/${signature}`, '_blank')
+                }}
+                className="btn btn-xs btn-outline"
+              >
+                View
+              </button>
+              <button
+                onClick={() => toast.dismiss(t.id)}
+                className="ml-2 btn btn-xs btn-ghost"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    ))
   }
 }

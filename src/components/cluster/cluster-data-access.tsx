@@ -5,6 +5,7 @@ import { atom, useAtomValue, useSetAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import { createContext, ReactNode, useContext } from 'react'
 import toast from 'react-hot-toast'
+import { ENV } from '../../config/env';
 
 export interface Cluster {
   name: string
@@ -24,6 +25,12 @@ export enum ClusterNetwork {
 // The endpoint provided by clusterApiUrl('mainnet-beta') does not allow access from the browser due to CORS restrictions
 // To use the mainnet-beta cluster, provide a custom endpoint
 export const defaultClusters: Cluster[] = [
+  {
+    name: 'mainnet',
+    endpoint: ENV.SOLANA_RPC_URL,
+    network: ClusterNetwork.Mainnet,
+    active: true,
+  },
   {
     name: 'devnet',
     endpoint: clusterApiUrl('devnet'),
@@ -72,24 +79,33 @@ export function ClusterProvider({ children }: { children: ReactNode }) {
   const setCluster = useSetAtom(clusterAtom)
   const setClusters = useSetAtom(clustersAtom)
 
-  const value: ClusterProviderContext = {
-    cluster,
-    clusters: clusters.sort((a, b) => (a.name > b.name ? 1 : -1)),
-    addCluster: (cluster: Cluster) => {
-      try {
-        new Connection(cluster.endpoint)
-        setClusters([...clusters, cluster])
-      } catch (err) {
-        toast.error(`${err}`)
-      }
-    },
-    deleteCluster: (cluster: Cluster) => {
-      setClusters(clusters.filter((item) => item.name !== cluster.name))
-    },
-    setCluster: (cluster: Cluster) => setCluster(cluster),
-    getExplorerUrl: (path: string) => `https://explorer.solana.com/${path}${getClusterUrlParam(cluster)}`,
-  }
-  return <Context.Provider value={value}>{children}</Context.Provider>
+  // Create a connection config based on the selected cluster
+  const endpoint = cluster.endpoint
+
+  // Create wallet configuration
+  const wallets: any[] = [] // Add your supported wallet adapters here
+  
+  return (
+    <Context.Provider value={{
+      cluster,
+      clusters: clusters.sort((a, b) => (a.name > b.name ? 1 : -1)),
+      addCluster: (cluster: Cluster) => {
+        try {
+          new Connection(cluster.endpoint)
+          setClusters([...clusters, cluster])
+        } catch (err) {
+          toast.error(`${err}`)
+        }
+      },
+      deleteCluster: (cluster: Cluster) => {
+        setClusters(clusters.filter((item) => item.name !== cluster.name))
+      },
+      setCluster: (cluster: Cluster) => setCluster(cluster),
+      getExplorerUrl: (path: string) => `https://explorer.solana.com/${path}${getClusterUrlParam(cluster)}`,
+    }}>
+      {children}
+    </Context.Provider>
+  )
 }
 
 export function useCluster() {
