@@ -12,8 +12,8 @@ export async function fetchSwapRate(token: string, amount: number): Promise<numb
     }
 
     const quote = await getJupiterQuote(
-      token,
       USDC_MINT,
+      token,
       amount,
       50 // 0.5% slippage
     );
@@ -32,7 +32,7 @@ export async function fetchSwapRate(token: string, amount: number): Promise<numb
       priceImpact: quote.priceImpactPct + '%'
     });
     
-    return 1.0/outputAmount;
+    return outputAmount/inputAmount;
   } catch (error: any) {
     console.error('Error fetching swap rate:', error);
     toast.error(`Failed to get swap rate: ${error.message}`);
