@@ -1,6 +1,5 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import { ENV } from '../config/env';
-import toast from 'react-hot-toast';
 
 // RPC endpoints to try in order
 const RPC_ENDPOINTS = [
@@ -76,15 +75,4 @@ export async function fetchTokens(walletAddress: string): Promise<string[]> {
   }
   
   return []; // Fallback empty array if all methods fail
-}
-
-// Helper function to get a mock list of tokens for testing
-export function getMockTokens(): string[] {
-  return [
-    'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
-    'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
-    'So11111111111111111111111111111111111111112',  // Wrapped SOL
-    'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So', // mSOL
-    'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', // BONK
-  ];
 }

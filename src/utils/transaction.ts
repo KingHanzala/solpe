@@ -1,5 +1,7 @@
-import { getJupiterQuote, executeJupiterSwap } from './jupiterApi';
-import { PublicKey } from '@solana/web3.js';
+import { getJupiterQuote, executeJupiterSwap, getTokenDecimals } from './jupiterApi';
+import { ENV } from '../config/env';
+import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createTransferInstruction } from "@solana/spl-token";
+import { PublicKey, sendAndConfirmTransaction, Transaction, SystemProgram, Connection, VersionedTransaction, TransactionMessage } from '@solana/web3.js';
 import toast from 'react-hot-toast';
 
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -17,22 +19,24 @@ export async function fetchSwapRate(token: string, amount: number): Promise<numb
       amount,
       50 // 0.5% slippage
     );
+
+    const decimals = await getTokenDecimals(token);
     
     // Convert from lamports back to token units (assuming 6 decimals for now)
     const inputAmount = parseFloat(quote.inAmount) / 1_000_000;
 
     // Convert from lamports back to token units (assuming 6 decimals for now)
-    const outputAmount = parseFloat(quote.outAmount) / 1_000_000;
+    const outputAmount = parseFloat(quote.outAmount) / 10**decimals;
     
     console.log('Jupiter quote received:', {
       inputToken: token,
       outputToken: USDC_MINT,
       inputAmount,
-      outputAmount: parseFloat(quote.outAmount) / 1_000_000,
+      outputAmount: parseFloat(quote.outAmount) / 10**decimals,
       priceImpact: quote.priceImpactPct + '%'
     });
     
-    return outputAmount/inputAmount;
+    return outputAmount;
   } catch (error: any) {
     console.error('Error fetching swap rate:', error);
     toast.error(`Failed to get swap rate: ${error.message}`);
@@ -51,62 +55,107 @@ export async function fetchSwapRate(token: string, amount: number): Promise<numb
   }
 }
 
-// filepath: src/utils/transaction.ts
 export async function sendTransaction(
-  receiverAddress: string, 
-  tokenMint: string, 
-  tokenAmount: number, 
-  usdcAmount: number
-): Promise<string> {
+  publicKey: PublicKey,
+  signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>,
+  receiverAddress: string,
+  tokenMint: string,
+  tokenAmount: number
+) {
   try {
-    console.log(`Preparing to send ${tokenAmount} of token ${tokenMint} to ${receiverAddress}`);
-    
-    // Validate addresses
-    try {
-      new PublicKey(receiverAddress);
-      new PublicKey(tokenMint);
-    } catch (error) {
-      throw new Error('Invalid address format');
+    console.log(`Preparing transaction for ${tokenAmount} of token ${tokenMint} to ${receiverAddress}`);
+    const connection = new Connection(ENV.SOLANA_RPC_URL, 'confirmed');
+    const signer = await window.solana.connect();
+    const userPublicKey = publicKey;
+    const receiverPublicKey = new PublicKey(receiverAddress);
+    const mintPublicKey = new PublicKey(tokenMint);
+    const usdc = new PublicKey(USDC_MINT);
+    let transaction = null;
+    const merchantUSDCTokenAccount = await getAssociatedTokenAddress(
+      usdc,
+      receiverPublicKey,
+      true,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+    if (mintPublicKey.equals(usdc)) {
+      console.log("Token is already USDC, proceeding with transfer.");
+      const senderATA = await getAssociatedTokenAddress(usdc, userPublicKey, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const receiverATA = merchantUSDCTokenAccount;
+      const transferInstruction = createTransferInstruction(senderATA, receiverATA, userPublicKey, tokenAmount*1_000_000);
+
+      console.log(`Sender ATA: ${senderATA.toBase58()}`);
+      console.log(`Receiver ATA: ${receiverATA.toBase58()}`);
+
+      const latestBlockhash = await connection.getLatestBlockhash();
+
+      const message = new TransactionMessage({
+        payerKey: userPublicKey,
+        recentBlockhash: latestBlockhash.blockhash,
+        instructions: [transferInstruction],
+      }).compileToV0Message();
+
+      transaction = new VersionedTransaction(message);
+
+    } else {
+      console.log("Token is not USDC, performing swap before sending.");
+
+      const quoteResponse = await getJupiterQuote(tokenMint, usdc.toBase58(), tokenAmount);
+      if (!quoteResponse || !quoteResponse.inAmount) {
+        throw new Error("Failed to fetch Jupiter quote");
+      }
+
+      const swapResponse = await (await executeJupiterSwap(quoteResponse, userPublicKey.toBase58(), merchantUSDCTokenAccount.toBase58())).json();
+      if (!swapResponse || !swapResponse.swapTransaction) {
+        throw new Error("Failed to execute Jupiter swap");
+      }
+
+      console.log("Swap completed, proceeding with transfer.");
+      console.log(swapResponse);
+
+      const transactionBase64 = swapResponse.swapTransaction
+      try {
+        transaction = VersionedTransaction.deserialize(Buffer.from(transactionBase64, 'base64'));
+      } catch (error) {
+        console.error("Failed to deserialize transaction:", error);
+        throw new Error("Invalid swap transaction");
+      }
+      console.log(transaction);
     }
     
-    // In a real implementation:
-    // 1. Create a transaction to transfer tokens
-    // 2. If tokenMint isn't USDC, perform a Jupiter swap first
-    // 3. Send the transaction to the wallet for signing
-    // 4. Submit the signed transaction
-    
-    // For the demo, simulate network delay and return a mock signature
-    toast.success('Transaction initiated');
-    
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // Generate a fake transaction signature
-    const fakeSignature = Array.from({ length: 64 }, () => 
-      '0123456789abcdef'[Math.floor(Math.random() * 16)]
-    ).join('');
-    
-    console.log(`Transaction completed with signature: ${fakeSignature}`);
-    
-    return fakeSignature;
+    if(transaction!=null){
+      const signedTransaction = await signTransaction(transaction);
+
+      const transactionBinary = signedTransaction.serialize();
+      console.log(transactionBinary);
+
+      const signature = await connection.sendRawTransaction(transactionBinary, {
+        maxRetries: 5,
+        preflightCommitment: "finalized"
+      });
+      await waitForConfirmation(connection, signature);
+    }
   } catch (error: any) {
-    console.error('Transaction error:', error);
-    toast.error(`Transaction failed: ${error.message}`);
+    console.error("Transaction error:", error);
     throw error;
   }
 }
 
-// Helper function to handle token decimals correctly
-export function getTokenDecimals(tokenMint: string): number {
-  // In a real app, you would fetch this from the blockchain
-  // For now, use common known values
-  const knownDecimals: Record<string, number> = {
-    'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 6, // USDC
-    'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': 6, // USDT
-    'So11111111111111111111111111111111111111112': 9,  // Wrapped SOL
-    'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So': 9, // mSOL
-    'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263': 5, // BONK
-  };
-  
-  return knownDecimals[tokenMint] || 6; // Default to 6 if unknown
+async function waitForConfirmation(connection: Connection, signature: string) {
+  let retries = 10; // Adjust based on your needs
+
+  while (retries > 0) {
+    const { value } = await connection.getSignatureStatus(signature);
+    console.log("Checking status...", value);
+    
+    if (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized") {
+      console.log("Transaction confirmed ✅");
+      return;
+    }
+
+    retries--;
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 sec before retrying
+  }
+
+  throw new Error("Transaction confirmation timeout ❌");
 }

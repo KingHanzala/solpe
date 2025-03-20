@@ -7,6 +7,7 @@ import { ConfirmSend } from './ConfirmSend';
 import { sendTransaction } from '../utils/transaction';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
+import { useWallet } from "@solana/wallet-adapter-react";
 
 // Use dynamic import for wallet components to avoid SSR issues
 const WalletComponents = dynamic(
@@ -59,6 +60,7 @@ export function PaymentFlow() {
   const [tokenAmount, setTokenAmount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { publicKey, signTransaction} = useWallet();
 
   const handleNext = (address: string, amount: number) => {
     setAddress(address);
@@ -76,9 +78,18 @@ export function PaymentFlow() {
     setLoading(true);
     setError(null);
     try {
-      await sendTransaction(address, token, tokenAmount, usdcAmount);
-      toast.success('Transaction successful!');
-      setStep(1);
+      if(!publicKey || !window.solana){
+        toast.error('Wallet not connected')
+      }
+      else{
+        if(signTransaction){
+          await sendTransaction(publicKey, signTransaction, address, token, tokenAmount);
+          toast.success('Transaction successful!');
+          setStep(1);
+        } else {
+          toast.error('Transaction signing function is not available');
+        }
+      }
     } catch (error: any) {
       console.error('Transaction error:', error);
       setError(error.message || 'Transaction failed');

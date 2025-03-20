@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PublicKey } from '@solana/web3.js';
 import { fetchSwapRate } from '../utils/transaction';
-import { fetchTokens, getMockTokens } from '../utils/fetchTokens';
+import { fetchTokens } from '../utils/fetchTokens';
 import toast from 'react-hot-toast';
 
 export function SelectToken({ 
@@ -34,19 +34,11 @@ export function SelectToken({
       try {
         let fetchedTokens: string[];
         
-        if (useTestnet) {
-          // Use mock data if in testnet mode
-          fetchedTokens = getMockTokens();
-          toast.success('Using demo tokens for testing');
-        } else {
-          // Try to fetch real tokens
-          fetchedTokens = await fetchTokens(walletAddress);
-        }
+        
+        fetchedTokens = await fetchTokens(walletAddress);
         
         if (fetchedTokens.length === 0) {
           toast.success('No tokens found in wallet. Showing demo tokens instead.');
-          fetchedTokens = getMockTokens();
-          setUseTestnet(true);
         }
         
         setTokens(fetchedTokens);
@@ -57,7 +49,6 @@ export function SelectToken({
         // Automatically switch to testnet mode if we encounter an RPC error
         toast.error(`Error loading tokens: ${err.message}`);
         toast.success('Switched to demo mode with test tokens');
-        setTokens(getMockTokens());
         setUseTestnet(true);
       } finally {
         setLoadingTokens(false);

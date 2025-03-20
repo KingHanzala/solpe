@@ -70,15 +70,18 @@ export async function getJupiterQuote(
     } catch (error) {
       throw new Error('Invalid token mint address');
     }
+
+    console.log("Get quote: input mint:", inputMint);
+    console.log("Get quote: output mint:", outputMint);
     
     const response = await axios.get(`${JUPITER_API_BASE}/quote`, {
       params: {
-        inputMint,
-        outputMint,
+        inputMint: inputMint,
+        outputMint: outputMint,
         amount: amountInLamports,
-        slippageBps,
+        slippageBps: slippageBps,
         onlyDirectRoutes: false,
-        asLegacyTransaction: false,
+        asLegacyTransaction: false
       },
       headers: {
         'Content-Type': 'application/json',
@@ -112,30 +115,35 @@ export async function getJupiterQuote(
  */
 export async function executeJupiterSwap(
   quoteResponse: JupiterQuote,
-  userPublicKey: string
-): Promise<{ txid: string }> {
+  userPublicKey: string,
+  destinationTokenAccount:string
+): Promise<Response> {
   try {
-    // In a real implementation, you would:
-    // 1. Get the serialized transaction from Jupiter's /swap endpoint
-    // 2. Deserialize the transaction
-    // 3. Send it to the wallet for signing
-    // 4. Submit the signed transaction
+    console.log("Executing swap with Jupiter.");
     
-    // For the demo, we'll just return a mock transaction ID
-    console.log('Executing swap with quote:', quoteResponse);
-    console.log('User public key:', userPublicKey);
-    
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Return a fake transaction ID
-    return {
-      txid: Array.from({ length: 64 }, () => 
-        '0123456789abcdef'[Math.floor(Math.random() * 16)]
-      ).join('')
-    };
+    const swapResponse = await fetch(`${JUPITER_API_BASE}/swap`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        quoteResponse,
+        userPublicKey,
+        destinationTokenAccount,
+        dynamicComputeUnitLimit: true,
+        dynamicSlippage: true,
+        prioritizationFeeLamports: {
+          priorityLevelWithMaxLamports: {
+            maxLamports: 1_000_000,
+            priorityLevel: "veryHigh",
+          },
+        },
+      }),
+    });
+
+    return swapResponse;
   } catch (error) {
-    console.error('Jupiter swap execution error:', error);
+    console.error("Jupiter swap execution error:", error);
     throw error;
   }
 }
@@ -175,7 +183,7 @@ export async function getJupiterPrice(
   }
 }
 
-async function getTokenDecimals(mintAddress: string): Promise<number> {
+export async function getTokenDecimals(mintAddress: string): Promise<number> {
   try {
     const mintPubkey = new PublicKey(mintAddress);
     const tokenSupply = await connection.getTokenSupply(mintPubkey);
@@ -186,7 +194,7 @@ async function getTokenDecimals(mintAddress: string): Promise<number> {
   }
 }
 
-function convertToLamports(amount: number, decimals: number): string {
+export function convertToLamports(amount: number, decimals: number): string {
   const factor = 10 ** decimals;
   const amountInLamports = Math.floor(amount * factor);
   return amountInLamports.toString();
