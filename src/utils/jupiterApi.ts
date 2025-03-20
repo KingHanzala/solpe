@@ -1,8 +1,11 @@
 import axios from 'axios';
-import { PublicKey } from '@solana/web3.js';
+import { ENV } from '../config/env';
+import { Connection, PublicKey } from '@solana/web3.js';
 
 // Jupiter API v4 base URL
 const JUPITER_API_BASE = 'https://api.jup.ag/swap/v1';
+
+const connection = new Connection(ENV.SOLANA_RPC_URL, 'confirmed');
 
 // Interface for Jupiter Quote
 export interface JupiterQuote {
@@ -56,7 +59,9 @@ export async function getJupiterQuote(
     // Convert amount to atomic units (lamports)
     // Note: In a production app, you should fetch token decimals from on-chain
     // For now, we'll assume USDC (6 decimals) for simplicity
-    const amountInLamports = Math.floor(amount * 1_000_000).toString();
+
+    const tokenDecimals = await getTokenDecimals(outputMint);
+    const amountInLamports = convertToLamports(amount,tokenDecimals);
     
     // Validate mint addresses
     try {
@@ -168,4 +173,21 @@ export async function getJupiterPrice(
     console.error('Jupiter price error:', error);
     throw error;
   }
+}
+
+async function getTokenDecimals(mintAddress: string): Promise<number> {
+  try {
+    const mintPubkey = new PublicKey(mintAddress);
+    const tokenSupply = await connection.getTokenSupply(mintPubkey);
+    return tokenSupply.value.decimals;
+  } catch (error) {
+    console.error("Error fetching token decimals:", error);
+    throw error;
+  }
+}
+
+function convertToLamports(amount: number, decimals: number): string {
+  const factor = 10 ** decimals;
+  const amountInLamports = Math.floor(amount * factor);
+  return amountInLamports.toString();
 }
