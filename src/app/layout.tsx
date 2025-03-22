@@ -1,5 +1,4 @@
 import './globals.css'
-import { ClusterProvider } from '@/components/cluster/cluster-data-access'
 import { UiLayout } from '@/components/ui/ui-layout'
 import { ReactQueryProvider } from './react-query-provider'
 import dynamic from 'next/dynamic'
@@ -17,9 +16,7 @@ export const metadata = {
 }
 
 const links = [
-  { label: 'Home', path: '/' },
-  { label: 'Account', path: '/account' },
-  { label: 'Clusters', path: '/clusters' },
+  { label: 'Home', path: '/' }
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -27,11 +24,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" data-theme="dark">
       <body>
         <ReactQueryProvider>
-          <ClusterProvider>
             <ClientSolanaProvider>
               <UiLayout links={links}>{children}</UiLayout>
             </ClientSolanaProvider>
-          </ClusterProvider>
         </ReactQueryProvider>
       </body>
     </html>

@@ -7,17 +7,12 @@ import { ReactNode, Suspense, useRef } from 'react'
 import toast, { Toaster } from 'react-hot-toast'
 import dynamic from 'next/dynamic'
 
-import { ClusterChecker, ClusterUiSelect } from '../cluster/cluster-ui'
-
 // Dynamically import wallet components
 const WalletComponents = dynamic(
   async () => {
     const { WalletButton } = await import('../solana/solana-provider')
-    const { AccountChecker } = await import('../account/account-ui')
-    
     return function WalletComponentsWrapper(props: any) {
-      const Component = props.component === 'WalletButton' ? WalletButton : AccountChecker;
-      return <Component {...props} />;
+      return <WalletButton {...props} />;
     };
   },
   { ssr: false }
@@ -47,14 +42,8 @@ export function UiLayout({ children, links }: { children: ReactNode; links: { la
           <Suspense fallback={<div className="btn btn-ghost">Loading...</div>}>
             <WalletComponents component="WalletButton" />
           </Suspense>
-          <ClusterUiSelect />
         </div>
       </div>
-      <ClusterChecker>
-        <Suspense fallback={null}>
-          <WalletComponents component="AccountChecker" />
-        </Suspense>
-      </ClusterChecker>
       <div className="flex-grow mx-4 lg:mx-auto">
         <Suspense
           fallback={
@@ -146,7 +135,7 @@ export function AppHero({
   subtitle: ReactNode
 }) {
   return (
-    <div className="hero py-[64px]">
+    <div className="hero pt-12 pb-6">
       <div className="hero-content text-center">
         <div className="max-w-2xl">
           {typeof title === 'string' ? <h1 className="text-5xl font-bold">{title}</h1> : title}

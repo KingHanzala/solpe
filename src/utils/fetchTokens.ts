@@ -1,4 +1,5 @@
 import { Connection, PublicKey } from '@solana/web3.js';
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { ENV } from '../config/env';
 
 // RPC endpoints to try in order
@@ -75,4 +76,64 @@ export async function fetchTokens(walletAddress: string): Promise<string[]> {
   }
   
   return []; // Fallback empty array if all methods fail
+}
+
+/**
+ * Checks if a wallet has sufficient balance of a specific token
+ * 
+ * @param walletAddress The Solana wallet address as string
+ * @param tokenMint The token mint address
+ * @param requiredAmount The amount required for the transaction
+ * @returns An object with balance info and whether it's sufficient
+ */
+export async function checkTokenBalance(
+  walletAddress: string, 
+  tokenMint: string, 
+  requiredAmount: number
+): Promise<{ 
+  hasEnough: boolean; 
+  balance: number; 
+  shortfall: number;
+}> {
+  const connection = new Connection(ENV.SOLANA_RPC_URL, 'confirmed');
+  const walletPublicKey = new PublicKey(walletAddress);
+  const mintPublicKey = new PublicKey(tokenMint);
+  
+  try {
+    // Find all token accounts owned by the wallet
+    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+      walletPublicKey,
+      { programId: TOKEN_PROGRAM_ID }
+    );
+    
+    // Find the specific token account for this mint
+    const tokenAccount = tokenAccounts.value.find(account => 
+      account.account.data.parsed.info.mint === tokenMint
+    );
+    
+    if (!tokenAccount) {
+      return { 
+        hasEnough: false, 
+        balance: 0, 
+        shortfall: requiredAmount 
+      };
+    }
+    
+    // Get the balance as a number
+    const balance = Number(tokenAccount.account.data.parsed.info.tokenAmount.amount) / 
+                    Math.pow(10, tokenAccount.account.data.parsed.info.tokenAmount.decimals);
+    
+    const hasEnough = balance >= requiredAmount;
+    const shortfall = hasEnough ? 0 : requiredAmount - balance;
+    
+    return { hasEnough, balance, shortfall };
+  } catch (error) {
+    console.error('Error checking token balance:', error);
+    // Return false in case of error, to be safe
+    return { 
+      hasEnough: false, 
+      balance: 0, 
+      shortfall: requiredAmount 
+    };
+  }
 }

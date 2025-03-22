@@ -1,7 +1,7 @@
 'use client'
 
 import { WalletError } from '@solana/wallet-adapter-base'
-import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react'
+import { WalletProvider } from '@solana/wallet-adapter-react'
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
 import { 
   PhantomWalletAdapter, 
@@ -9,85 +9,59 @@ import {
   CoinbaseWalletAdapter,
   TorusWalletAdapter
 } from '@solana/wallet-adapter-wallets'
-import dynamic from 'next/dynamic'
-import { ReactNode, useCallback, useMemo, useState, useEffect } from 'react'
-import { useCluster } from '../cluster/cluster-data-access'
+import { ReactNode, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
+import { useWallet } from "@solana/wallet-adapter-react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { ellipsify } from "../ui/ui-layout";
 
 require('@solana/wallet-adapter-react-ui/styles.css')
 
-export const WalletButton = dynamic(
-  async () => (await import('@solana/wallet-adapter-react-ui')).WalletMultiButton,
-  { ssr: false }
-)
+export function WalletButton() {
+  const { connected, publicKey, disconnect } = useWallet();
 
-export const WalletConnectionStatus = dynamic(
-  async () => {
-    const { useWallet } = await import('@solana/wallet-adapter-react')
-    
-    return function WalletStatus() {
-      const { publicKey, wallet, connecting, connected, disconnecting } = useWallet()
-      const [copied, setCopied] = useState(false)
-      
-      useEffect(() => {
-        if (copied) {
-          const timer = setTimeout(() => setCopied(false), 2000)
-          return () => clearTimeout(timer)
-        }
-      }, [copied])
-      
-      if (!wallet) {
-        return null
-      }
-      
-      const copyAddress = () => {
-        if (publicKey) {
-          navigator.clipboard.writeText(publicKey.toString())
-          setCopied(true)
-          toast.success('Address copied to clipboard')
-        }
-      }
-      
-      if (connecting) {
-        return <div className="alert alert-info">Connecting to {wallet.adapter.name}...</div>
-      }
-      
-      if (disconnecting) {
-        return <div className="alert alert-warning">Disconnecting...</div>
-      }
-      
-      if (connected && publicKey) {
-        return (
-          <div className="alert alert-success shadow-lg">
-            <div>
-              <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <div>
-                <span>Connected to {wallet.adapter.name}</span>
-                <div className="text-xs mt-1 flex items-center">
-                  <span className="truncate max-w-[150px]">{publicKey.toString()}</span>
-                  <button 
-                    onClick={copyAddress} 
-                    className="ml-2 p-1 rounded hover:bg-base-300"
-                    title="Copy address"
-                  >
-                    {copied ? '✓' : '📋'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-      }
-      
-      return null
+  const handleDisconnect = () => {
+    console.log("Disconnect clicked"); // Debugging log
+    try {
+      disconnect();
+      console.log("Disconnect function called");
+    } catch (error) {
+      console.error("Error disconnecting wallet:", error);
     }
-  },
-  { ssr: false }
-)
+  };
+  
+  if (connected && publicKey) {
+    return (
+      <div className="flex items-center space-x-2">
+        <div className="px-3 py-1 bg-base-300 rounded text-sm">
+          {ellipsify(publicKey.toString())}
+        </div>
+        <button 
+          onClick={handleDisconnect}
+          className="btn btn-sm btn-error"
+        >
+          Disconnect
+        </button>
+      </div>
+    );
+  }
+  
+  return <WalletMultiButton className="btn btn-outline" />;
+}
+
+export function WalletConnectionStatus() {
+  const { publicKey } = useWallet();
+  
+  if (!publicKey) return null;
+  
+  return (
+    <div className="text-xs opacity-50 mb-2">
+      Connected: {ellipsify(publicKey.toString())}
+    </div>
+  );
+}
 
 export function SolanaProvider({ children }: { children: ReactNode }) {
-  const { cluster } = useCluster()
-  const endpoint = useMemo(() => cluster.endpoint, [cluster])
   
   const wallets = useMemo(
     () => [
@@ -124,11 +98,9 @@ export function SolanaProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={wallets} onError={onError} autoConnect>
         <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
-    </ConnectionProvider>
   )
 }
 
