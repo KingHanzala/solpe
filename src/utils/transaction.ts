@@ -1,10 +1,9 @@
 import { getJupiterQuote, executeJupiterSwap, getTokenDecimals } from './jupiterApi';
 import { ENV } from '../config/env';
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createTransferInstruction } from "@solana/spl-token";
-import { PublicKey, sendAndConfirmTransaction, Transaction, SystemProgram, Connection, VersionedTransaction, TransactionMessage } from '@solana/web3.js';
+import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { PublicKey, Connection, VersionedTransaction } from '@solana/web3.js';
 import toast from 'react-hot-toast';
-
-const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+import { USDC_MINT } from '@/config/tokens';
 
 export async function fetchSwapRate(token: string, amount: number): Promise<number> {
   try {

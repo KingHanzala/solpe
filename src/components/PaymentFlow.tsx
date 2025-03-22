@@ -10,8 +10,7 @@ import dynamic from 'next/dynamic';
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Connection, PublicKey, Transaction } from '@solana/web3.js';
 import { getAssociatedTokenAddress, ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createTransferInstruction } from '@solana/spl-token';
-
-const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+import { USDC_MINT } from '@/config/tokens';
 
 // Use dynamic import for wallet components to avoid SSR issues
 const WalletComponents = dynamic(
