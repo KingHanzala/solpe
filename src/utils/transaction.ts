@@ -55,7 +55,7 @@ export async function fetchSwapRate(token: string, amount: number): Promise<numb
   }
 }
 
-export async function sendTransaction(
+export async function swapTransaction(
   publicKey: PublicKey,
   signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>,
   receiverAddress: string,
@@ -78,70 +78,53 @@ export async function sendTransaction(
       TOKEN_PROGRAM_ID,
       ASSOCIATED_TOKEN_PROGRAM_ID
     );
-    if (mintPublicKey.equals(usdc)) {
-      console.log("Token is already USDC, proceeding with transfer.");
-      const senderATA = await getAssociatedTokenAddress(usdc, userPublicKey, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
-      const receiverATA = merchantUSDCTokenAccount;
-      const transferInstruction = createTransferInstruction(senderATA, receiverATA, userPublicKey, tokenAmount*1_000_000);
-
-      console.log(`Sender ATA: ${senderATA.toBase58()}`);
-      console.log(`Receiver ATA: ${receiverATA.toBase58()}`);
-
-      const latestBlockhash = await connection.getLatestBlockhash();
-
-      const message = new TransactionMessage({
-        payerKey: userPublicKey,
-        recentBlockhash: latestBlockhash.blockhash,
-        instructions: [transferInstruction],
-      }).compileToV0Message();
-
-      transaction = new VersionedTransaction(message);
-
-    } else {
-      console.log("Token is not USDC, performing swap before sending.");
-
-      const quoteResponse = await getJupiterQuote(tokenMint, usdc.toBase58(), tokenAmount);
-      if (!quoteResponse || !quoteResponse.inAmount) {
-        throw new Error("Failed to fetch Jupiter quote");
-      }
-
-      const swapResponse = await (await executeJupiterSwap(quoteResponse, userPublicKey.toBase58(), merchantUSDCTokenAccount.toBase58())).json();
-      if (!swapResponse || !swapResponse.swapTransaction) {
-        throw new Error("Failed to execute Jupiter swap");
-      }
-
-      console.log("Swap completed, proceeding with transfer.");
-      console.log(swapResponse);
-
-      const transactionBase64 = swapResponse.swapTransaction
-      try {
-        transaction = VersionedTransaction.deserialize(Buffer.from(transactionBase64, 'base64'));
-      } catch (error) {
-        console.error("Failed to deserialize transaction:", error);
-        throw new Error("Invalid swap transaction");
-      }
-      console.log(transaction);
+    if(tokenMint == USDC_MINT) {
+      throw new Error("Transaction not feasible");
     }
-    
-    if(transaction!=null){
-      const signedTransaction = await signTransaction(transaction);
+    console.log("Token is not USDC, performing swap before sending.");
 
-      const transactionBinary = signedTransaction.serialize();
-      console.log(transactionBinary);
-
-      const signature = await connection.sendRawTransaction(transactionBinary, {
-        maxRetries: 5,
-        preflightCommitment: "finalized"
-      });
-      await waitForConfirmation(connection, signature);
+    const quoteResponse = await getJupiterQuote(tokenMint, usdc.toBase58(), tokenAmount);
+    if (!quoteResponse || !quoteResponse.inAmount) {
+      throw new Error("Failed to fetch Jupiter quote");
     }
+
+    const swapResponse = await (await executeJupiterSwap(quoteResponse, userPublicKey.toBase58(), merchantUSDCTokenAccount.toBase58())).json();
+    if (!swapResponse || !swapResponse.swapTransaction) {
+      throw new Error("Failed to execute Jupiter swap");
+    }
+
+    console.log("Swap completed, proceeding with transfer.");
+    console.log(swapResponse);
+
+    const transactionBase64 = swapResponse.swapTransaction
+    try {
+      transaction = VersionedTransaction.deserialize(Buffer.from(transactionBase64, 'base64'));
+    } catch (error) {
+      console.error("Failed to deserialize transaction:", error);
+      throw new Error("Invalid swap transaction");
+    }
+    console.log(transaction);
+  let signature = '';
+  if(transaction!=null){
+    const signedTransaction = await signTransaction(transaction);
+
+    const transactionBinary = signedTransaction.serialize();
+    console.log(transactionBinary);
+
+    signature = await connection.sendRawTransaction(transactionBinary, {
+      maxRetries: 5,
+      preflightCommitment: "finalized"
+    });
+    await waitForConfirmation(connection, signature);
+    }
+    return signature;
   } catch (error: any) {
     console.error("Transaction error:", error);
     throw error;
   }
 }
 
-async function waitForConfirmation(connection: Connection, signature: string) {
+export async function waitForConfirmation(connection: Connection, signature: string) {
   let retries = 10; // Adjust based on your needs
 
   while (retries > 0) {

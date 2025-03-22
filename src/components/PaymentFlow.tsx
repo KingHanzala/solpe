@@ -1,13 +1,17 @@
 'use client'
-
+import { ENV } from '../config/env';
 import React, { useState, useEffect } from 'react';
 import { PaymentForm } from './PaymentForm';
 import { SelectToken } from './SelectToken';
 import { ConfirmSend } from './ConfirmSend';
-import { sendTransaction } from '../utils/transaction';
+import { swapTransaction, waitForConfirmation } from '../utils/transaction';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 import { useWallet } from "@solana/wallet-adapter-react";
+import { Connection, PublicKey, Transaction } from '@solana/web3.js';
+import { getAssociatedTokenAddress, ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createTransferInstruction } from '@solana/spl-token';
+
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 // Use dynamic import for wallet components to avoid SSR issues
 const WalletComponents = dynamic(
@@ -52,6 +56,68 @@ const WalletComponents = dynamic(
   { ssr: false }
 );
 
+const sendUSDC = async (publicKey: PublicKey, sendTransaction: any, receiver: string, amount: number) => {
+  const connection = new Connection(ENV.SOLANA_RPC_URL, 'confirmed');
+  if (!publicKey) throw new Error('Wallet not connected');
+  try {
+    const senderPublicKey = publicKey;
+    const receiverPublicKey = new PublicKey(receiver);
+    const mintPublicKey = new PublicKey(USDC_MINT);
+
+    // Get the sender's associated token account
+    const senderTokenAccount = await getAssociatedTokenAddress(
+      mintPublicKey,
+      senderPublicKey,
+      true,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+
+    // Get the receiver's associated token account
+    const receiverTokenAccount = await getAssociatedTokenAddress(
+      mintPublicKey,
+      receiverPublicKey,
+      true,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+
+    // Check if the receiver's token account exists, if not, create it
+    const receiverAccountInfo = await connection.getAccountInfo(receiverTokenAccount);
+    const transaction = new Transaction();
+    if (!receiverAccountInfo) {
+      transaction.add(
+        createAssociatedTokenAccountInstruction(
+          senderPublicKey, // Payer
+          receiverTokenAccount, // Associated Token Account
+          receiverPublicKey, // Owner
+          mintPublicKey // Mint
+        )
+      );
+    }
+
+    // Transfer tokens
+    transaction.add(
+      createTransferInstruction(
+        senderTokenAccount,
+        receiverTokenAccount,
+        senderPublicKey,
+        amount * Math.pow(10, 6),
+        [],
+        TOKEN_PROGRAM_ID // Adjust for token decimals
+      )
+    );
+
+    // Send transaction
+    const signature = await sendTransaction(transaction, connection);
+    await waitForConfirmation(connection, signature);
+    return signature;
+    console.log('Transaction confirmed with signature:', signature);
+  } catch (error) {
+    console.error('Error sending SPL token:', error);
+  }
+};
+
 export function PaymentFlow() {
   const [step, setStep] = useState(1);
   const [address, setAddress] = useState('');
@@ -60,7 +126,8 @@ export function PaymentFlow() {
   const [tokenAmount, setTokenAmount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { publicKey, signTransaction} = useWallet();
+  const { publicKey, sendTransaction, signTransaction } = useWallet();
+  const [signature, setSignature] = useState('');
 
   const handleNext = (address: string, amount: number) => {
     setAddress(address);
@@ -77,18 +144,30 @@ export function PaymentFlow() {
   const handleSend = async () => {
     setLoading(true);
     setError(null);
+    let signature = '';
     try {
       if(!publicKey || !window.solana){
         toast.error('Wallet not connected')
       }
       else{
-        if(signTransaction){
-          await sendTransaction(publicKey, signTransaction, address, token, tokenAmount);
-          toast.success('Transaction successful!');
-          setStep(1);
+        if(token == USDC_MINT){
+          signature = await sendUSDC(publicKey, sendTransaction, address, tokenAmount);
+          setSignature(signature);
         } else {
-          toast.error('Transaction signing function is not available');
+          if(signTransaction){
+            signature = await swapTransaction(publicKey, signTransaction, address, token, tokenAmount);
+            setSignature(signature);
+          } else {
+            toast.error('Transaction signing function is not available');
+          }
         }
+        
+      }
+      if(signature){
+        toast.success('Transaction successful!');
+        setStep(1);
+      } else {
+        toast.error('Transaction failed!');
       }
     } catch (error: any) {
       console.error('Transaction error:', error);
@@ -129,6 +208,20 @@ export function PaymentFlow() {
           {step === 1 && <PaymentForm onNext={handleNext} />}
           {step === 2 && <SelectToken address={address} amount={usdcAmount} onTokenSelect={handleTokenSelect} walletAddress={walletAddress} />}
           {step === 3 && <ConfirmSend address={address} token={token} tokenAmount={tokenAmount} usdcAmount={usdcAmount} onSend={handleSend} />}
+          {signature && (
+            <div className="mt-4">
+              <p className="text-success">
+                Transaction successful! View it on <a
+                  href={`https://solscan.io/tx/${signature}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-500 underline"
+                >
+                  Solscan
+                </a>.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </WalletComponents>
